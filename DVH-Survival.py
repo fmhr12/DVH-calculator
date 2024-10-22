@@ -564,7 +564,7 @@ def main():
                 for message in high_risk_messages:
                     st.warning(message)
             else:
-                st.success("Patient does not meet any high-risk criteria based on D10cc(Gy) and V60Gy(cc).")
+                st.success("Patient does not meet any high-risk criteria based on D10cc(Gy) > 59.2  and V60Gy(cc) > 12.6 ")
 
             # Load survival data
             survival_datasets = load_survival_data()
