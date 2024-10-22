@@ -337,7 +337,7 @@ def load_survival_data():
     """
     survival_data_files = {
         'D10cc(Gy)': 'survival_data_D10.csv',
-        'V60Gy(cc)': 'survival_data_v60.csv'
+        'V60Gy(cc)': 'survival_data_V60.csv'
     }
     survival_datasets = {}
     for key, file in survival_data_files.items():
