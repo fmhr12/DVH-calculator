@@ -1,10 +1,9 @@
 # dvh_metrics_with_cif_app.py
-
 import streamlit as st
 import pandas as pd
 import numpy as np
 import os
-import openpyxl  # for xlsx
+import openpyxl  # for reading .xlsx
 import plotly.graph_objects as go
 
 st.set_page_config(layout="wide")
@@ -29,6 +28,24 @@ D_percent_values = {
 # V metrics dose grid (in cGy)
 doses = [500, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500, 5000,
          5500, 6000, 6500, 7000]
+
+# ---------------- Sidebar: sample data downloads ----------------
+def sample_downloads_sidebar():
+    st.sidebar.header("Sample DVH datasets")
+    for label, fname in [
+        ("High risk sample (.xlsx)", "high_risk_sample.xlsx"),
+        ("Low risk sample (.xlsx)",  "low_risk_sample.xlsx"),
+    ]:
+        if os.path.exists(fname):
+            with open(fname, "rb") as f:
+                st.sidebar.download_button(
+                    label=f"Download {label}",
+                    data=f,
+                    file_name=fname,
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
+        else:
+            st.sidebar.info(f"Place **{fname}** in the app folder to enable download.")
 
 # ---------------- DVH processors ----------------
 def process_excel(uploaded_file):
@@ -55,7 +72,7 @@ def process_excel(uploaded_file):
                 except Exception:
                     st.warning(f"Non-integer dose in '{sheet_name}' for '{metric}'.")
                     continue
-                Dcc_metrics[f"{metric}(Gy)"] = dose / 100.0
+                Dcc_metrics[f"{metric}(Gy)"] = dose / 100.0  # cGy -> Gy
 
             # total volume for percentages
             total_volume = df.iat[1, 1] if (df.shape[0] > 1 and df.shape[1] > 1) else 0
@@ -64,8 +81,9 @@ def process_excel(uploaded_file):
 
             # D%
             for metric, pct in D_percent_values.items():
+                key = f"{metric}(Gy)"
                 if total_volume == 0:
-                    D_percent_metrics[f"{metric}(Gy)"] = np.nan
+                    D_percent_metrics[key] = np.nan
                     continue
                 v_thresh = pct * total_volume
                 diff = np.abs(df.iloc[1:, 1:].values - v_thresh)
@@ -79,7 +97,7 @@ def process_excel(uploaded_file):
                 except Exception:
                     st.warning(f"Non-integer dose in '{sheet_name}' for '{metric}'.")
                     continue
-                D_percent_metrics[f"{metric}(Gy)"] = dose / 100.0
+                D_percent_metrics[key] = dose / 100.0
 
             # Vcc / V%
             try:
@@ -147,8 +165,9 @@ def process_csv(csv_file):
 
         # D%
         for metric, pct in D_percent_values.items():
+            key = f"{metric}(Gy)"
             if total_volume == 0:
-                D_percent_metrics[f"{metric}(Gy)"] = np.nan
+                D_percent_metrics[key] = np.nan
                 continue
             v_thresh = pct * total_volume
             diff = np.abs(df.iloc[1:, 1:].values - v_thresh)
@@ -162,7 +181,7 @@ def process_csv(csv_file):
             except Exception:
                 st.warning(f"Non-integer dose for '{metric}'.")
                 continue
-            D_percent_metrics[f"{metric}(Gy)"] = dose / 100.0
+            D_percent_metrics[key] = dose / 100.0
 
         # Vcc / V%
         try:
@@ -200,6 +219,11 @@ def process_csv(csv_file):
 
 # ---------------- Risk flag ----------------
 def determine_risk_group(Dcc_df, Vcc_df):
+    """
+    High risk if either:
+      - D10cc(Gy) > 59.2
+      - V60Gy(cc) > 12.6
+    """
     high_risk_messages, is_high_risk = [], False
     if 'D10cc(Gy)' in Dcc_df.columns:
         v = Dcc_df.at['Dcc', 'D10cc(Gy)']
@@ -213,65 +237,56 @@ def determine_risk_group(Dcc_df, Vcc_df):
             is_high_risk = True
     return is_high_risk, high_risk_messages
 
-# ---------------- Reconstructed CIF (from provided figure) ----------------
-def reconstructed_cif_data():
+# ---------------- Reconstructed CIF (from Figure 1A info) ----------------
+def cif_series_figure_1A():
     """
-    Approximate points digitized from the shared plot (no source data available).
-    Times in months; cumulative incidence as proportion (0-1).
+    Reconstructed CIF curves for ORN (ClinRad: 1–4), High vs Low risk.
+    Constraints enforced:
+      - At 60 months: high=0.117, low=0.035
+      - At 114 months: high=0.188, low=0.058
+    Values are approximate, digitized by eye from the provided plot.
     """
-    t = [0, 5, 10, 15, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110]
+    # times in months
+    t = [0, 6, 12, 18, 24, 30, 36, 42, 48, 54, 60, 72, 84, 96, 108, 114]
 
-    # ORN (ClinRad: 2 to 4) - High risk (solid red)
-    y_24_high = [0.000, 0.010, 0.030, 0.050, 0.065, 0.085, 0.095, 0.105,
-                 0.115, 0.125, 0.135, 0.145, 0.155, 0.155]
+    # High-risk (red) — reaches 11.7% at 60m and 18.8% at 114m
+    y_high = [0.000, 0.010, 0.030, 0.055, 0.072, 0.085, 0.095, 0.102,
+              0.108, 0.113, 0.117, 0.125, 0.135, 0.155, 0.175, 0.188]
 
-    # ORN (ClinRad: 2 to 4) - Low risk (solid blue)
-    y_24_low  = [0.000, 0.002, 0.008, 0.012, 0.015, 0.020, 0.025, 0.030,
-                 0.034, 0.038, 0.042, 0.045, 0.047, 0.049]
+    # Low-risk (blue) — reaches 3.5% at 60m and 5.8% at 114m
+    y_low  = [0.000, 0.002, 0.008, 0.012, 0.016, 0.020, 0.024, 0.028,
+              0.031, 0.034, 0.035, 0.040, 0.045, 0.052, 0.056, 0.058]
 
-    # ORN (ClinRad: 1 to 4) - High risk (red dashed) — slightly higher
-    y_14_high = [0.000, 0.012, 0.035, 0.060, 0.075, 0.095, 0.105, 0.120,
-                 0.130, 0.140, 0.150, 0.165, 0.170, 0.175]
+    return t, y_high, y_low
 
-    # ORN (ClinRad: 1 to 4) - Low risk (blue dashed) — slightly higher
-    y_14_low  = [0.000, 0.003, 0.010, 0.014, 0.018, 0.022, 0.028, 0.032,
-                 0.036, 0.040, 0.045, 0.048, 0.050, 0.055]
-
-    series = [
-        ("ORN (ClinRad: 2 to 4) - High risk", t, y_24_high, "red", "solid"),
-        ("ORN (ClinRad: 2 to 4) - Low risk",  t, y_24_low,  "blue", "solid"),
-        ("ORN (ClinRad: 1 to 4) - High risk", t, y_14_high, "red", "dash"),
-        ("ORN (ClinRad: 1 to 4) - Low risk",  t, y_14_low,  "blue", "dash"),
-    ]
-    return series
-
-def plot_reconstructed_cif():
-    series = reconstructed_cif_data()
+def plot_cif_figure_1A():
+    t, y_high, y_low = cif_series_figure_1A()
     fig = go.Figure()
-    for name, x, y, color, dash in series:
-        fig.add_trace(
-            go.Scatter(
-                x=x, y=y, mode="lines",
-                name=name,
-                line=dict(color=color, dash=dash, width=2),
-                hovertemplate="Time (months): %{x}<br>Cumulative incidence: %{y:.3f}<extra></extra>",
-            )
-        )
+    fig.add_trace(go.Scatter(
+        x=t, y=y_high, mode="lines", name="ORN (ClinRad:1–4) - High risk",
+        line=dict(color="red", width=2),
+        hovertemplate="Time: %{x} months<br>CIF: %{y:.3f}<extra></extra>"
+    ))
+    fig.add_trace(go.Scatter(
+        x=t, y=y_low, mode="lines", name="ORN (ClinRad:1–4) - Low risk",
+        line=dict(color="blue", width=2),
+        hovertemplate="Time: %{x} months<br>CIF: %{y:.3f}<extra></extra>"
+    ))
     fig.update_layout(
-        title="Cumulative Incidence Functions Comparison (reconstructed)",
+        title="Cumulative Incidence Functions by Risk Group (reconstructed)",
         xaxis_title="Time (months)",
         yaxis_title="Cumulative Incidence",
         hovermode="x unified",
         width=1000, height=500,
-        legend_title_text=None,
-        xaxis=dict(range=[0, 112], showspikes=True, spikemode="across"),
+        xaxis=dict(range=[0, 114], showspikes=True, spikemode="across"),
         yaxis=dict(range=[0, 0.41]),
         margin=dict(l=40, r=20, t=60, b=60),
+        legend_title_text=None,
     )
     st.plotly_chart(fig, use_container_width=True)
     st.caption(
-        "Note: Curves reconstructed approximately from the provided image; "
-        "values are estimates for interactive inspection."
+        "Reconstructed from the uploaded Figure 1A. Values are approximate; "
+        "exact anchors enforced at 60m (High 11.7%, Low 3.5%) and 114m (High 18.8%, Low 5.8%)."
     )
 
 # ---------------- UI ----------------
@@ -280,8 +295,11 @@ def main():
     st.write(
         "Upload a CSV or Excel file containing a **cumulative DVH table**. "
         "The app computes Dcc(Gy), D%(Gy), VGy(cc), and VGy(%) and flags whether the person "
-        "is **high-risk** or **low-risk**."
+        "is **high-risk** or **low-risk**. An interactive **CIF** figure is shown at the end."
     )
+
+    # Sidebar download buttons
+    sample_downloads_sidebar()
 
     uploaded_file = st.file_uploader("Choose a CSV or Excel file", type=['csv', 'xlsx', 'xls'])
 
@@ -320,7 +338,7 @@ def main():
             # ----- Always show the reconstructed CIF figure at the end -----
             st.markdown("---")
             st.subheader("Cumulative Incidence Functions (interactive)")
-            plot_reconstructed_cif()
+            plot_cif_figure_1A()
 
 if __name__ == "__main__":
     main()
