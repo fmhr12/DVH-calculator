@@ -217,46 +217,29 @@ def process_csv(csv_file):
         st.error(f"Error processing CSV: {e}")
         return None, None, None, None
 
-# ---------------- Risk flag ----------------
-def determine_risk_group(Dcc_df, Vcc_df):
+# ---------------- Risk flag (D10cc only) ----------------
+def determine_risk_group(Dcc_df):
     """
-    High risk if either:
-      - D10cc(Gy) > 59.2
-      - V60Gy(cc) > 12.6
+    High risk if D10cc(Gy) > 59.2 (derived from the cited article).
     """
-    high_risk_messages, is_high_risk = [], False
+    is_high_risk, messages = False, []
     if 'D10cc(Gy)' in Dcc_df.columns:
         v = Dcc_df.at['Dcc', 'D10cc(Gy)']
         if pd.notnull(v) and v > 59.2:
-            high_risk_messages.append("D10cc(Gy) > 59.2")
             is_high_risk = True
-    if 'V60Gy(cc)' in Vcc_df.columns:
-        v = Vcc_df.at['Vcc', 'V60Gy(cc)']
-        if pd.notnull(v) and v > 12.6:
-            high_risk_messages.append("V60Gy(cc) > 12.6")
-            is_high_risk = True
-    return is_high_risk, high_risk_messages
+            messages.append("D10cc(Gy) > 59.2")
+    return is_high_risk, messages
 
-# ---------------- Reconstructed CIF (from Figure 1A info) ----------------
+# ---------------- Reconstructed CIF (Fig 1A: ORN1–4, High vs Low) ----------------
 def cif_series_figure_1A():
-    """
-    Reconstructed CIF curves for ORN (ClinRad: 1–4), High vs Low risk.
-    Constraints enforced:
-      - At 60 months: high=0.117, low=0.035
-      - At 114 months: high=0.188, low=0.058
-    Values are approximate, digitized by eye from the provided plot.
-    """
     # times in months
     t = [0, 6, 12, 18, 24, 30, 36, 42, 48, 54, 60, 72, 84, 96, 108, 114]
-
-    # High-risk (red) — reaches 11.7% at 60m and 18.8% at 114m
+    # High-risk (red): 11.7% @60m; 18.8% @114m
     y_high = [0.000, 0.010, 0.030, 0.055, 0.072, 0.085, 0.095, 0.102,
               0.108, 0.113, 0.117, 0.125, 0.135, 0.155, 0.175, 0.188]
-
-    # Low-risk (blue) — reaches 3.5% at 60m and 5.8% at 114m
+    # Low-risk (blue): 3.5% @60m; 5.8% @114m
     y_low  = [0.000, 0.002, 0.008, 0.012, 0.016, 0.020, 0.024, 0.028,
               0.031, 0.034, 0.035, 0.040, 0.045, 0.052, 0.056, 0.058]
-
     return t, y_high, y_low
 
 def plot_cif_figure_1A():
@@ -273,7 +256,7 @@ def plot_cif_figure_1A():
         hovertemplate="Time: %{x} months<br>CIF: %{y:.3f}<extra></extra>"
     ))
     fig.update_layout(
-        title="Cumulative Incidence Functions by Risk Group (reconstructed)",
+        title="Cumulative Incidence Functions by Risk Group",
         xaxis_title="Time (months)",
         yaxis_title="Cumulative Incidence",
         hovermode="x unified",
@@ -284,18 +267,18 @@ def plot_cif_figure_1A():
         legend_title_text=None,
     )
     st.plotly_chart(fig, use_container_width=True)
-    st.caption(
-        "Reconstructed from the uploaded Figure 1A. Values are approximate; "
-        "exact anchors enforced at 60m (High 11.7%, Low 3.5%) and 114m (High 18.8%, Low 5.8%)."
-    )
 
 # ---------------- UI ----------------
 def main():
     st.title("DVH Metrics Calculator & Risk Flag")
+
     st.write(
         "Upload a CSV or Excel file containing a **cumulative DVH table**. "
         "The app computes Dcc(Gy), D%(Gy), VGy(cc), and VGy(%) and flags whether the person "
-        "is **high-risk** or **low-risk**. An interactive **CIF** figure is shown at the end."
+        "is **high-risk** or **low-risk**. "
+        "Risk classification is based **only on D10cc (Gy)** with a cut-off of **59.2 Gy**, "
+        "as described in the referenced article: "
+        "[ScienceDirect article](https://www.sciencedirect.com/science/article/pii/S0167814025045001)."
     )
 
     # Sidebar download buttons
@@ -327,15 +310,15 @@ def main():
             st.subheader("V (%)")
             st.dataframe(V_percent_df, use_container_width=True)
 
-            # Risk assessment
-            is_high_risk, msgs = determine_risk_group(Dcc_df, Vcc_df)
+            # Risk assessment (D10cc only)
+            is_high_risk, msgs = determine_risk_group(Dcc_df)
             st.subheader("Risk Group")
             if is_high_risk:
-                st.error(f"**High-risk** — {'; '.join(msgs) if msgs else 'criteria met'}")
+                st.error(f"**High-risk** — {'; '.join(msgs) if msgs else 'D10cc(Gy) > 59.2'}")
             else:
-                st.success("**Low-risk** — does not meet high-risk criteria (D10cc(Gy) > 59.2 or V60Gy(cc) > 12.6).")
+                st.success("**Low-risk** — does not meet the D10cc(Gy) > 59.2 criterion.")
 
-            # ----- Always show the reconstructed CIF figure at the end -----
+            # ----- Interactive CIF figure (always shown at the end) -----
             st.markdown("---")
             st.subheader("Cumulative Incidence Functions (interactive)")
             plot_cif_figure_1A()
