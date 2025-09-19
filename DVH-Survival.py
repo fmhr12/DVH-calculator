@@ -304,10 +304,10 @@ def main():
             st.subheader("D% (Gy)")
             st.dataframe(D_percent_df, use_container_width=True)
 
-            st.subheader("V (cc)")
+            st.subheader("VGy (cc)")
             st.dataframe(Vcc_df, use_container_width=True)
 
-            st.subheader("V (%)")
+            st.subheader("VGy (%)")
             st.dataframe(V_percent_df, use_container_width=True)
 
             # Risk assessment (D10cc only)
